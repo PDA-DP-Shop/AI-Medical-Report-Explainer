@@ -1,79 +1,79 @@
 import streamlit as st
 import pdfplumber
+from PIL import Image
+import pytesseract
 from openai import OpenAI
 
-# ------------------ PAGE CONFIG ------------------
-st.set_page_config(
-    page_title="AI Medical Report Explainer",
-    page_icon="🧠",
-    layout="centered"
-)
+st.set_page_config(page_title="AI Medical Report Explainer", layout="centered")
 
-st.title("🧠 AI Medical Report Explainer")
-st.write("Upload a medical report and get an easy explanation in your preferred language.")
-
-# ------------------ API CLIENT ------------------
+# OpenAI client (Streamlit Cloud Secret)
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# ------------------ INPUTS ------------------
+st.title("🧠 AI Medical Report Explainer")
+st.write("Upload a medical report (PDF or Image) and get a simple explanation.")
+
 uploaded_file = st.file_uploader(
-    "📄 Upload Medical Report (PDF only)",
-    type=["pdf"]
+    "Upload Medical Report",
+    type=["pdf", "png", "jpg", "jpeg"]
 )
 
 language = st.selectbox(
-    "🌍 Select Explanation Language",
+    "Choose Explanation Language",
     ["English", "Hindi", "Gujarati", "Chinese"]
 )
 
-# ------------------ FUNCTIONS ------------------
+# ---------- FUNCTIONS ----------
+
 def extract_text_from_pdf(file):
     text = ""
     with pdfplumber.open(file) as pdf:
         for page in pdf.pages:
-            page_text = page.extract_text()
-            if page_text:
-                text += page_text + "\n"
+            if page.extract_text():
+                text += page.extract_text() + "\n"
     return text
 
-def generate_explanation(report_text, language):
-    prompt = f"""
+
+def extract_text_from_image(file):
+    image = Image.open(file)
+    text = pytesseract.image_to_string(image)
+    return text
+
+
+# ---------- MAIN LOGIC ----------
+
+if uploaded_file and st.button("Explain Report"):
+    with st.spinner("Analyzing report..."):
+        if uploaded_file.type == "application/pdf":
+            report_text = extract_text_from_pdf(uploaded_file)
+        else:
+            report_text = extract_text_from_image(uploaded_file)
+
+        if report_text.strip() == "":
+            st.error("❌ Unable to read the report. Please upload a clear PDF or image.")
+        else:
+            prompt = f"""
 You are a medical assistant AI.
 
-Rules:
-- Explain the medical report in very simple and easy language
+Task:
+- Explain the medical report in very simple, easy language
 - Avoid medical jargon
-- Do NOT diagnose or prescribe medicine
-- If values are abnormal, gently suggest consulting a doctor
-- Use bullet points where helpful
-
-Language: {language}
+- Do NOT give diagnosis
+- Explain like talking to a normal person
+- Language: {language}
 
 Medical Report:
 {report_text}
 """
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
-    return response.choices[0].message.content
 
-# ------------------ ACTION ------------------
-if uploaded_file and st.button("🧠 Explain Report"):
-    with st.spinner("Analyzing report..."):
-        report_text = extract_text_from_pdf(uploaded_file)
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}]
+            )
 
-        if not report_text.strip():
-            st.error("❌ Could not read text from the PDF.")
-        else:
-            explanation = generate_explanation(report_text, language)
-            st.subheader("📝 Easy Explanation")
-            st.write(explanation)
+            st.subheader("📝 Simple Explanation")
+            st.write(response.choices[0].message.content)
 
-# ------------------ DISCLAIMER ------------------
-st.divider()
 st.info(
     "⚠ This explanation is for educational purposes only. "
-    "It does not replace professional medical advice. "
     "Always consult a certified doctor."
 )
