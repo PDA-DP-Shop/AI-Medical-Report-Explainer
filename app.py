@@ -1,14 +1,13 @@
 import streamlit as st
 import base64
-from openai import OpenAI
+import requests
 from PIL import Image
+import io
 
-st.set_page_config(page_title="AI Medical Report Explainer")
+st.set_page_config(page_title="AI Medical Report Explainer", layout="centered")
 
 st.title("🧠 AI Medical Report Explainer")
 st.write("Upload a medical report (PDF or Image) and get a simple explanation.")
-
-client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
 uploaded_file = st.file_uploader(
     "Upload Medical Report",
@@ -20,41 +19,66 @@ language = st.selectbox(
     ["English", "Hindi", "Gujarati", "Chinese"]
 )
 
-def encode_file(file):
-    return base64.b64encode(file.read()).decode("utf-8")
+def call_openrouter(image_bytes, language):
+    image_base64 = base64.b64encode(image_bytes).decode()
+
+    headers = {
+        "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": "openai/gpt-4o-mini",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": f"""
+Explain this medical report in VERY SIMPLE language.
+Avoid medical jargon.
+Do not diagnose.
+Language: {language}
+"""
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{image_base64}"
+                        }
+                    }
+                ]
+            }
+        ]
+    }
+
+    response = requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers=headers,
+        json=payload
+    )
+
+    return response.json()["choices"][0]["message"]["content"]
 
 if uploaded_file and st.button("Explain Report"):
-    with st.spinner("Analyzing report..."):
-        file_bytes = encode_file(uploaded_file)
+    try:
+        if uploaded_file.type == "application/pdf":
+            st.error("📌 PDF detected. Please upload a clear IMAGE of the report.")
+            st.stop()
 
-        prompt = f"""
-        You are a medical assistant.
-        Read the uploaded medical report and explain it in VERY SIMPLE language.
-        Avoid medical jargon.
-        Do NOT diagnose.
-        Language: {language}
-        """
+        image = Image.open(uploaded_file).convert("RGB")
+        buf = io.BytesIO()
+        image.save(buf, format="PNG")
 
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{file_bytes}"
-                            },
-                        },
-                    ],
-                }
-            ],
-        )
+        with st.spinner("Analyzing report..."):
+            explanation = call_openrouter(buf.getvalue(), language)
 
-        st.subheader("📄 Easy Explanation")
-        st.write(response.choices[0].message.content)
+        st.subheader("📝 Simple Explanation")
+        st.write(explanation)
+
+    except Exception as e:
+        st.error("Unable to read report. Please upload a clear image.")
 
 st.info(
     "⚠ This explanation is for educational purposes only. "
