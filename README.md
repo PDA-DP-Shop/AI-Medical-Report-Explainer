@@ -1,25 +1,21 @@
 # 🧠 AI Medical Report Explainer
 
-
-Upload a medical report image and get an easy explanation in your preferred language.
+Upload a medical report image and get a simple explanation in your preferred language.
 
 ## ✅ Features
-- Image-based medical report explanation
-- Supports multiple languages:
+- Supports medical report images (PNG, JPG, JPEG)
+- Explains values like HbA1c, Blood Sugar, Cholesterol
+- Multi-language output:
   - English
   - Hindi
   - Gujarati
   - Chinese
-- Simple, patient-friendly output
-- Safe medical disclaimer included
+- Uses Vision AI (no OCR needed)
 
-## ❌ Not Supported
-- PDF files
-- Scanned PDFs
+## 🚫 PDF Limitation
+Scanned PDFs are not supported directly.
+👉 Convert PDF to image before uploading.
 
-👉 Please upload **clear images (PNG/JPG)** of reports.
-
-## 🚀 Run Locally
-```bash
-pip install -r requirements.txt
-streamlit run app.py
+## ⚠ Disclaimer
+This tool is for educational purposes only.
+Always consult a certified doctor.
