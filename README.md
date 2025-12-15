@@ -1,35 +1,26 @@
 # 🧠 AI Medical Report Explainer
 
-An AI-powered web app that explains medical reports in **simple, easy language**  
-and supports **multiple languages** for better patient understanding.
-
----
+This application allows users to upload a medical report (PDF or Image)
+and receive a simple, easy-to-understand explanation in their preferred language.
 
 ## 🚀 Features
-- Upload medical reports (PDF)
-- Easy-to-understand explanations
-- Multiple languages supported:
+- Upload PDF or Image medical reports
+- Multi-language explanation:
   - English
   - Hindi
   - Gujarati
   - Chinese
-- Patient-friendly output
-- Secure & cloud-hosted
-
----
+- AI-powered medical explanation
+- Simple and patient-friendly output
 
 ## 🛠 Tech Stack
 - Python
 - Streamlit
-- OpenAI (LLM)
-- PDFPlumber
+- OpenAI
+- OCR (Tesseract)
+- PDF Text Extraction
 
----
-
-## 📂 How to Run Locally
-
+## ▶ How to Run Locally
 ```bash
-git clone https://github.com/your-username/AI-Medical-Report-Explainer.git
-cd AI-Medical-Report-Explainer
 pip install -r requirements.txt
 streamlit run app.py
