@@ -1,6 +1,6 @@
 import streamlit as st
 import base64
-import requests
+from openai import OpenAI
 from PIL import Image
 import io
 
@@ -9,78 +9,74 @@ st.set_page_config(page_title="AI Medical Report Explainer", layout="centered")
 st.title("🧠 AI Medical Report Explainer")
 st.write("Upload a medical report (PDF or Image) and get a simple explanation.")
 
-uploaded_file = st.file_uploader(
-    "Upload Medical Report",
-    type=["png", "jpg", "jpeg", "pdf"]
-)
-
 language = st.selectbox(
     "Choose Explanation Language",
     ["English", "Hindi", "Gujarati", "Chinese"]
 )
 
-def call_openrouter(image_bytes, language):
-    image_base64 = base64.b64encode(image_bytes).decode()
+uploaded_file = st.file_uploader(
+    "Upload Medical Report",
+    type=["png", "jpg", "jpeg", "pdf"]
+)
 
-    headers = {
-        "Authorization": f"Bearer {st.secrets['OPENROUTER_API_KEY']}",
-        "Content-Type": "application/json"
-    }
+client = OpenAI(
+    api_key=st.secrets["OPENROUTER_API_KEY"],
+    base_url="https://openrouter.ai/api/v1"
+)
 
-    payload = {
-        "model": "openai/gpt-4o-mini",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": f"""
-Explain this medical report in VERY SIMPLE language.
-Avoid medical jargon.
-Do not diagnose.
-Language: {language}
-"""
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": f"data:image/png;base64,{image_base64}"
-                        }
-                    }
-                ]
-            }
-        ]
-    }
-
-    response = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers=headers,
-        json=payload
-    )
-
-    return response.json()["choices"][0]["message"]["content"]
+def image_to_base64(img):
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    return base64.b64encode(buffer.getvalue()).decode()
 
 if uploaded_file and st.button("Explain Report"):
     try:
         if uploaded_file.type == "application/pdf":
-            st.error("📌 PDF detected. Please upload a clear IMAGE of the report.")
+            st.error("⚠ Please upload report as IMAGE (photo or screenshot). PDF scan not supported yet.")
             st.stop()
 
         image = Image.open(uploaded_file).convert("RGB")
-        buf = io.BytesIO()
-        image.save(buf, format="PNG")
+        img_base64 = image_to_base64(image)
 
-        with st.spinner("Analyzing report..."):
-            explanation = call_openrouter(buf.getvalue(), language)
+        prompt = f"""
+        You are a medical assistant AI.
 
-        st.subheader("📝 Simple Explanation")
-        st.write(explanation)
+        Task:
+        - Read the medical report from the image
+        - Explain it in very simple language
+        - No medical jargon
+        - No diagnosis
+        - Suggest doctor consultation if needed
+        - Language: {language}
+        """
+
+        response = client.chat.completions.create(
+            model="openai/gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": f"data:image/png;base64,{img_base64}"
+                            }
+                        }
+                    ]
+                }
+            ],
+            max_tokens=500
+        )
+
+        st.success("✅ Report Explanation")
+        st.write(response.choices[0].message.content)
 
     except Exception as e:
-        st.error("Unable to read report. Please upload a clear image.")
+        st.error("❌ Unable to read report. Please upload a clear image.")
+        st.write(str(e))
 
-st.info(
+st.warning(
     "⚠ This explanation is for educational purposes only. "
     "Always consult a certified doctor."
 )
