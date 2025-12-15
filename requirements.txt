@@ -1,3 +1,4 @@
 streamlit
-openai
+requests
 pillow
+pdf2image
