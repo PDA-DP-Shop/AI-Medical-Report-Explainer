@@ -1,99 +1,101 @@
 import streamlit as st
-import requests
+import pdfplumber
 from PIL import Image
-from pdf2image import convert_from_bytes
-import base64
+import pytesseract
 import io
+import requests
 
 # ---------------- CONFIG ----------------
+st.set_page_config(page_title="AI Medical Report Explainer", page_icon="🩺")
+
 OPENROUTER_API_KEY = st.secrets["OPENROUTER_API_KEY"]
 MODEL = "openai/gpt-4o-mini"
 
-# ---------------- UI ----------------
-st.set_page_config(page_title="AI Medical Report Explainer", layout="centered")
-
-st.title("🧠 AI Medical Report Explainer")
-st.write("Upload a medical report (PDF or Image) and get a simple explanation.")
-
-language = st.selectbox(
-    "Choose Explanation Language",
-    ["English", "Hindi", "Gujarati"]
-)
-
-uploaded_file = st.file_uploader(
-    "Upload Medical Report",
-    type=["png", "jpg", "jpeg", "pdf"]
-)
-
 # ---------------- FUNCTIONS ----------------
-def file_to_base64_image(file):
-    if file.type == "application/pdf":
-        images = convert_from_bytes(file.read())
-        image = images[0]  # first page
-    else:
-        image = Image.open(file)
+def extract_text_from_pdf(file):
+    text = ""
+    with pdfplumber.open(file) as pdf:
+        for page in pdf.pages:
+            if page.extract_text():
+                text += page.extract_text() + "\n"
+            else:
+                image = page.to_image(resolution=300).original
+                text += pytesseract.image_to_string(image)
+    return text.strip()
 
-    buf = io.BytesIO()
-    image.save(buf, format="PNG")
-    return base64.b64encode(buf.getvalue()).decode()
+def extract_text_from_image(file):
+    image = Image.open(file)
+    return pytesseract.image_to_string(image)
 
-def explain_report(image_base64, language):
-    prompt = f"""
-You are a medical assistant.
-Explain the medical report image in VERY SIMPLE language.
-Avoid medical terms.
-Language: {language}
+def call_openrouter(prompt):
+    headers = {
+        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+        "Content-Type": "application/json"
+    }
 
-Give:
-- What values mean
-- Whether they are normal or not
-- Simple advice
-Do NOT diagnose.
-"""
+    payload = {
+        "model": MODEL,
+        "messages": [
+            {"role": "system", "content": "You are a medical assistant AI. Explain reports simply. No diagnosis."},
+            {"role": "user", "content": prompt}
+        ]
+    }
 
     response = requests.post(
         "https://openrouter.ai/api/v1/chat/completions",
-        headers={
-            "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-            "Content-Type": "application/json",
-        },
-        json={
-            "model": MODEL,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/png;base64,{image_base64}"
-                            },
-                        },
-                    ],
-                }
-            ],
-        },
-        timeout=60,
+        headers=headers,
+        json=payload,
+        timeout=60
     )
 
     return response.json()["choices"][0]["message"]["content"]
 
-# ---------------- RUN ----------------
-if uploaded_file and st.button("Explain Report"):
-    try:
-        with st.spinner("Reading report..."):
-            image_base64 = file_to_base64_image(uploaded_file)
-            result = explain_report(image_base64, language)
+# ---------------- UI ----------------
+st.title("🩺 AI Medical Report Explainer")
+st.write("Upload **PDF or Image** → Get **simple explanation** in your language")
 
-        st.success("Explanation Ready")
-        st.write(result)
-
-    except Exception as e:
-        st.error("Unable to read report. Please upload a clear image or PDF.")
-        st.code(str(e))
-
-st.warning(
-    "⚠️ This explanation is for educational purposes only. "
-    "Always consult a certified doctor."
+uploaded_file = st.file_uploader(
+    "Upload Medical Report (PDF / Image)",
+    type=["pdf", "png", "jpg", "jpeg"]
 )
+
+language = st.selectbox(
+    "Select Explanation Language",
+    ["English", "Hindi", "Gujarati", "Chinese"]
+)
+
+mode = st.radio(
+    "Explanation Mode",
+    ["Patient (Simple)", "Doctor (Technical)"]
+)
+
+if uploaded_file and st.button("Explain Report"):
+    with st.spinner("Reading report..."):
+        if uploaded_file.type == "application/pdf":
+            report_text = extract_text_from_pdf(uploaded_file)
+        else:
+            report_text = extract_text_from_image(uploaded_file)
+
+        if not report_text.strip():
+            st.error("❌ Could not read this file. Please upload a clearer image or report.")
+        else:
+            prompt = f"""
+Explain the following medical report.
+
+Language: {language}
+Mode: {mode}
+
+Rules:
+- Use simple words for Patient mode
+- Use medical terms for Doctor mode
+- Do NOT give diagnosis
+- Suggest doctor consultation if needed
+
+Medical Report:
+{report_text}
+"""
+            result = call_openrouter(prompt)
+            st.subheader("📝 Explanation")
+            st.write(result)
+
+st.info("⚠ This tool is for educational purposes only. Always consult a certified doctor.")
