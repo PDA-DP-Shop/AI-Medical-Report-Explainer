@@ -2,4 +2,3 @@ streamlit
 openai
 pdfplumber
 pillow
-pytesseract
