@@ -1,20 +1,20 @@
 import streamlit as st
-import pdfplumber
 from openai import OpenAI
 from PIL import Image
+import io
 
-# ---------- CONFIG ----------
-st.set_page_config(page_title="AI Medical Report Explainer", page_icon="🧠")
+st.set_page_config(page_title="AI Medical Report Explainer", layout="centered")
 
+st.title("🧠 AI Medical Report Explainer")
+st.write("Upload a **clear image** of your medical report and get a simple explanation.")
+
+# 🔐 OpenAI client
 client = OpenAI(api_key=st.secrets["OPENAI_API_KEY"])
 
-# ---------- UI ----------
-st.title("🧠 AI Medical Report Explainer")
-st.write("Upload a medical report (PDF or Image) and get a simple explanation.")
-
+# ✅ IMAGE ONLY
 uploaded_file = st.file_uploader(
-    "Upload Medical Report",
-    type=["pdf", "png", "jpg", "jpeg"]
+    "Upload Medical Report Image",
+    type=["png", "jpg", "jpeg"]
 )
 
 language = st.selectbox(
@@ -22,60 +22,48 @@ language = st.selectbox(
     ["English", "Hindi", "Gujarati", "Chinese"]
 )
 
-# ---------- FUNCTIONS ----------
-def extract_text_from_pdf(file):
-    text = ""
-    with pdfplumber.open(file) as pdf:
-        for page in pdf.pages:
-            if page.extract_text():
-                text += page.extract_text() + "\n"
-    return text.strip()
-
-def explain_report(report_text, language):
-    prompt = f"""
-    You are a medical assistant AI.
-
-    Explain the following medical report in VERY SIMPLE language.
-    Avoid medical jargon.
-    Do NOT give diagnosis.
-    Suggest consulting a doctor if values look abnormal.
-
-    Language: {language}
-
-    Medical Report:
-    {report_text}
-    """
-
-    response = client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[{"role": "user", "content": prompt}]
-    )
-
-    return response.choices[0].message.content
-
-# ---------- ACTION ----------
 if uploaded_file and st.button("Explain Report"):
+    try:
+        image = Image.open(uploaded_file)
 
-    file_type = uploaded_file.type
+        prompt = f"""
+        You are a medical assistant AI.
 
-    if file_type == "application/pdf":
-        report_text = extract_text_from_pdf(uploaded_file)
+        Explain the medical report shown in the image.
+        Use very simple language.
+        Avoid medical jargon.
+        Do NOT diagnose.
+        Suggest consulting a doctor if needed.
 
-        if not report_text:
-            st.error("❌ This PDF has no readable text. Please upload a text-based PDF.")
-        else:
-            explanation = explain_report(report_text, language)
-            st.subheader("📝 Easy Explanation")
-            st.write(explanation)
+        Language: {language}
+        """
 
-    else:
-        st.warning(
-            "⚠ Image reports are not supported on Streamlit Cloud yet.\n\n"
-            "Please upload a **text-based PDF** for accurate explanation."
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": "data:image/png;base64,"
+                                + st.session_state.get("img_b64", "")
+                            },
+                        },
+                    ],
+                }
+            ],
         )
 
-# ---------- DISCLAIMER ----------
-st.info(
+        st.subheader("📝 Easy Explanation")
+        st.write(response.choices[0].message.content)
+
+    except Exception:
+        st.error("❌ Unable to read the image. Please upload a clear report image.")
+
+st.warning(
     "⚠ This explanation is for educational purposes only. "
     "Always consult a certified doctor."
 )
