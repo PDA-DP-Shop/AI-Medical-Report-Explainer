@@ -40,36 +40,36 @@ def image_to_base64(image: Image.Image) -> str:
     return base64.b64encode(buffer.getvalue()).decode()
 
 def explain_with_openrouter(image: Image.Image, mode: str) -> str:
-    image_base64 = image_to_base64(image)
+    buffered = io.BytesIO()
+    image.save(buffered, format="PNG")
+    image_base64 = base64.b64encode(buffered.getvalue()).decode()
 
-    system_prompt = (
-        "You are a medical assistant. Explain the medical report clearly in simple language for a patient."
+    prompt = (
+        "Explain this medical report in simple language for a patient."
         if mode == "Patient (Simple)"
-        else "You are a medical expert. Explain the medical report in technical language for a doctor."
+        else "Explain this medical report in technical language for a doctor."
     )
 
     payload = {
-        "model": "openai/gpt-4o-mini",  # Vision-capable via OpenRouter
+        "model": "google/gemini-1.5-flash",
         "messages": [
-            {
-                "role": "system",
-                "content": system_prompt
-            },
             {
                 "role": "user",
                 "content": [
                     {
-                        "type": "input_text",
-                        "text": "Analyze and explain this medical report image."
+                        "type": "text",
+                        "text": prompt
                     },
                     {
-                        "type": "input_image",
-                        "image_base64": image_base64
+                        "type": "image_url",
+                        "image_url": {
+                            "url": f"data:image/png;base64,{image_base64}"
+                        }
                     }
                 ]
             }
         ],
-        "max_tokens": 500
+        "max_tokens": 600
     }
 
     headers = {
@@ -85,10 +85,10 @@ def explain_with_openrouter(image: Image.Image, mode: str) -> str:
     )
 
     if response.status_code != 200:
-        return f"❌ API Error: {response.text}"
+        return f"API Error: {response.text}"
 
-    data = response.json()
-    return data["choices"][0]["message"]["content"]
+    return response.json()["choices"][0]["message"]["content"]
+
 
 # ---------------- MAIN LOGIC ----------------
 if uploaded_file:
