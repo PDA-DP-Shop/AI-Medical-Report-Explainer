@@ -131,7 +131,7 @@ def explain_with_openrouter(image: Image.Image, mode: str) -> str:
                 ]
             }
         ],
-        "max_tokens": 120
+        "max_tokens": 300
     }
 
     headers = {
