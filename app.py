@@ -144,7 +144,7 @@ def explain_with_openrouter(image: Image.Image, language, mode: str) -> str:
     prompt = build_prompt(language, mode)
 
     payload = {
-        "model": "openai/gpt-4o",
+        "model": "anthropic/claude-3-haiku",
         "messages": [
             {
                 "role": "user",
