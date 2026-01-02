@@ -13,7 +13,6 @@ st.set_page_config(
 )
 
 OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY")
-
 if not OPENROUTER_API_KEY:
     st.error("OpenRouter API key not found in Streamlit secrets.")
     st.stop()
@@ -21,6 +20,11 @@ if not OPENROUTER_API_KEY:
 # ---------------- UI ----------------
 st.title("🧠 AI Medical Report Explainer")
 st.write("Upload a medical report image and get an AI-generated explanation.")
+
+language = st.selectbox(
+    "Choose Explanation Language",
+    ["English", "Hindi", "Gujarati"]
+)
 
 mode = st.radio(
     "Explanation Mode",
@@ -53,7 +57,7 @@ def compress_image(image: Image.Image, max_width=900, quality=60) -> bytes:
 # ---------------- RISK LOGIC ----------------
 def detect_risk_level(text: str) -> str:
     text = text.lower()
-    if "high risk" in text or "high cardiovascular risk" in text:
+    if "high risk" in text or "high cardiovascular" in text:
         return "High"
     if "average risk" in text or "moderate risk" in text:
         return "Average"
@@ -69,51 +73,75 @@ def risk_badge(risk: str):
     else:
         st.error("🔴 High Risk")
 
-# ---------------- ABNORMAL VALUE HIGHLIGHT ----------------
+# ---------------- ABNORMAL HIGHLIGHT ----------------
 def highlight_abnormal(text: str):
-    abnormal_keywords = [
-        "high", "elevated", "above normal",
-        "low", "below normal", "abnormal"
-    ]
-
-    for word in abnormal_keywords:
+    keywords = ["high", "low", "elevated", "abnormal", "above", "below"]
+    for k in keywords:
         text = re.sub(
-            rf"\b{word}\b",
-            f"**⚠️ {word.upper()}**",
+            rf"\b{k}\b",
+            f"**⚠️ {k.upper()}**",
             text,
             flags=re.IGNORECASE
         )
     return text
 
 # ---------------- FALLBACK ----------------
-def fallback_explanation(mode: str) -> str:
-    if mode == "Patient (Simple)":
+def fallback_explanation(language, mode):
+    if language == "Hindi":
         return (
-            "This is a cardiovascular laboratory report. It includes tests like "
-            "Apolipoprotein B and hs-CRP, which help assess heart disease risk. "
-            "The results suggest an average cardiovascular risk. Regular follow-ups "
-            "and healthy lifestyle choices are recommended."
+            "यह एक हृदय स्वास्थ्य जांच रिपोर्ट है। इसमें Apo B और hs-CRP जैसे "
+            "परीक्षण शामिल हैं, जो हृदय रोग के जोखिम का आकलन करते हैं। "
+            "रिपोर्ट औसत हृदय जोखिम दर्शाती है।"
         )
-    else:
+    if language == "Gujarati":
         return (
-            "The report represents an advanced cardiac risk screening. hs-CRP values "
-            "place the patient in an average cardiovascular risk category. ApoB is "
-            "within reference range, indicating a favorable lipid profile."
+            "આ હૃદય સ્વાસ્થ્ય તપાસ રિપોર્ટ છે. તેમાં Apo B અને hs-CRP જેવા ટેસ્ટ્સ "
+            "સમાવેલ છે, જે હૃદયના જોખમનું મૂલ્યાંકન કરે છે. "
+            "રિપોર્ટ સરેરાશ હૃદય જોખમ દર્શાવે છે."
+        )
+    return (
+        "This is a heart health laboratory report. It includes tests like "
+        "Apolipoprotein B and hs-CRP to assess cardiovascular risk. "
+        "The findings suggest an average risk level."
+    )
+
+# ---------------- PROMPT BUILDER ----------------
+def build_prompt(language, mode):
+    if language == "Hindi":
+        return (
+            "इस मेडिकल रिपोर्ट को सरल भाषा में समझाइए। "
+            "मुख्य टेस्ट परिणाम और जोखिम स्तर बताइए।"
+            if mode == "Patient (Simple)"
+            else
+            "इस मेडिकल रिपोर्ट का तकनीकी विश्लेषण हिंदी में दीजिए। "
+            "असामान्य परिणाम और जोखिम स्तर बताइए।"
         )
 
-# ---------------- OPENROUTER CALL ----------------
-def explain_with_openrouter(image: Image.Image, mode: str) -> str:
-    compressed_bytes = compress_image(image)
-    image_base64 = base64.b64encode(compressed_bytes).decode()
+    if language == "Gujarati":
+        return (
+            "આ મેડિકલ રિપોર્ટને સરળ ગુજરાતી ભાષામાં સમજાવો. "
+            "મુખ્ય ટેસ્ટ અને જોખમ સ્તર જણાવો."
+            if mode == "Patient (Simple)"
+            else
+            "આ મેડિકલ રિપોર્ટનું ટેક્નિકલ વિશ્લેષણ ગુજરાતી ભાષામાં આપો. "
+            "અસામાન્ય પરિણામો અને જોખમ સ્તર દર્શાવો."
+        )
 
-    prompt = (
-        "Briefly explain this medical report in simple language. "
+    # English
+    return (
+        "Explain this medical report in simple language. "
         "Mention key tests, abnormal values, and overall risk."
         if mode == "Patient (Simple)"
         else
         "Provide a concise clinical interpretation of this medical report, "
         "highlighting abnormal findings and risk category."
     )
+
+# ---------------- OPENROUTER ----------------
+def explain_with_openrouter(image: Image.Image, language, mode: str) -> str:
+    compressed = compress_image(image)
+    image_base64 = base64.b64encode(compressed).decode()
+    prompt = build_prompt(language, mode)
 
     payload = {
         "model": "anthropic/claude-3-haiku",
@@ -131,7 +159,7 @@ def explain_with_openrouter(image: Image.Image, mode: str) -> str:
                 ]
             }
         ],
-        "max_tokens": 300
+        "max_tokens": 150
     }
 
     headers = {
@@ -147,31 +175,26 @@ def explain_with_openrouter(image: Image.Image, mode: str) -> str:
     )
 
     if response.status_code != 200:
-        return fallback_explanation(mode)
+        return fallback_explanation(language, mode)
 
     return response.json()["choices"][0]["message"]["content"]
 
 # ---------------- MAIN ----------------
 if uploaded_file:
-    try:
-        image = Image.open(uploaded_file).convert("RGB")
-        st.image(image, caption="Uploaded Medical Report", use_column_width=True)
+    image = Image.open(uploaded_file).convert("RGB")
+    st.image(image, caption="Uploaded Medical Report", use_column_width=True)
 
-        if st.button("Explain Report"):
-            with st.spinner("Analyzing medical report..."):
-                explanation = explain_with_openrouter(image, mode)
+    if st.button("Explain Report"):
+        with st.spinner("Analyzing medical report..."):
+            explanation = explain_with_openrouter(image, language, mode)
 
-            risk = detect_risk_level(explanation)
-            risk_badge(risk)
+        risk = detect_risk_level(explanation)
+        risk_badge(risk)
 
-            st.subheader("📝 Explanation")
-            explanation = highlight_abnormal(explanation)
-            st.markdown(explanation)
+        st.subheader("📝 Explanation")
+        st.markdown(highlight_abnormal(explanation))
 
-            st.info(
-                "⚠️ This explanation is for educational purposes only. "
-                "Always consult a certified medical professional."
-            )
-
-    except Exception as e:
-        st.error(f"Error processing image: {e}")
+        st.info(
+            "⚠️ This explanation is for educational purposes only. "
+            "Always consult a certified medical professional."
+        )
