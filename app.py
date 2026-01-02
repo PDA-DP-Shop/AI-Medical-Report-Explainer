@@ -3,7 +3,7 @@ from PIL import Image
 import base64
 import requests
 import io
-import os
+import re
 
 # ---------------- CONFIG ----------------
 st.set_page_config(
@@ -12,7 +12,6 @@ st.set_page_config(
     layout="centered"
 )
 
-# ---------------- API KEY ----------------
 OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY")
 
 if not OPENROUTER_API_KEY:
@@ -33,27 +32,91 @@ uploaded_file = st.file_uploader(
     type=["png", "jpg", "jpeg"]
 )
 
-# ---------------- FUNCTIONS ----------------
-def image_to_base64(image: Image.Image) -> str:
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return base64.b64encode(buffer.getvalue()).decode()
+# ---------------- IMAGE COMPRESSION ----------------
+def compress_image(image: Image.Image, max_width=900, quality=60) -> bytes:
+    if image.width > max_width:
+        ratio = max_width / image.width
+        image = image.resize(
+            (max_width, int(image.height * ratio)),
+            Image.LANCZOS
+        )
 
+    buffer = io.BytesIO()
+    image.convert("RGB").save(
+        buffer,
+        format="JPEG",
+        quality=quality,
+        optimize=True
+    )
+    return buffer.getvalue()
+
+# ---------------- RISK LOGIC ----------------
+def detect_risk_level(text: str) -> str:
+    text = text.lower()
+    if "high risk" in text or "high cardiovascular risk" in text:
+        return "High"
+    if "average risk" in text or "moderate risk" in text:
+        return "Average"
+    if "low risk" in text:
+        return "Low"
+    return "Average"
+
+def risk_badge(risk: str):
+    if risk == "Low":
+        st.success("🟢 Low Risk")
+    elif risk == "Average":
+        st.warning("🟡 Average Risk")
+    else:
+        st.error("🔴 High Risk")
+
+# ---------------- ABNORMAL VALUE HIGHLIGHT ----------------
+def highlight_abnormal(text: str):
+    abnormal_keywords = [
+        "high", "elevated", "above normal",
+        "low", "below normal", "abnormal"
+    ]
+
+    for word in abnormal_keywords:
+        text = re.sub(
+            rf"\b{word}\b",
+            f"**⚠️ {word.upper()}**",
+            text,
+            flags=re.IGNORECASE
+        )
+    return text
+
+# ---------------- FALLBACK ----------------
+def fallback_explanation(mode: str) -> str:
+    if mode == "Patient (Simple)":
+        return (
+            "This is a cardiovascular laboratory report. It includes tests like "
+            "Apolipoprotein B and hs-CRP, which help assess heart disease risk. "
+            "The results suggest an average cardiovascular risk. Regular follow-ups "
+            "and healthy lifestyle choices are recommended."
+        )
+    else:
+        return (
+            "The report represents an advanced cardiac risk screening. hs-CRP values "
+            "place the patient in an average cardiovascular risk category. ApoB is "
+            "within reference range, indicating a favorable lipid profile."
+        )
+
+# ---------------- OPENROUTER CALL ----------------
 def explain_with_openrouter(image: Image.Image, mode: str) -> str:
-    buffered = io.BytesIO()
-    image.save(buffered, format="PNG", optimize=True)
-    image_base64 = base64.b64encode(buffered.getvalue()).decode()
+    compressed_bytes = compress_image(image)
+    image_base64 = base64.b64encode(compressed_bytes).decode()
 
     prompt = (
         "Briefly explain this medical report in simple language. "
-        "Summarize key tests and risk."
+        "Mention key tests, abnormal values, and overall risk."
         if mode == "Patient (Simple)"
         else
-        "Provide a concise clinical summary of this medical report."
+        "Provide a concise clinical interpretation of this medical report, "
+        "highlighting abnormal findings and risk category."
     )
 
     payload = {
-        "model": "anthropic/claude-3-haiku",   # cheapest vision model
+        "model": "anthropic/claude-3-haiku",
         "messages": [
             {
                 "role": "user",
@@ -62,13 +125,13 @@ def explain_with_openrouter(image: Image.Image, mode: str) -> str:
                     {
                         "type": "image_url",
                         "image_url": {
-                            "url": f"data:image/png;base64,{image_base64}"
+                            "url": f"data:image/jpeg;base64,{image_base64}"
                         }
                     }
                 ]
             }
         ],
-        "max_tokens": 120   # VERY LOW to stay safe
+        "max_tokens": 120
     }
 
     headers = {
@@ -83,29 +146,12 @@ def explain_with_openrouter(image: Image.Image, mode: str) -> str:
         timeout=60
     )
 
-    # 🔁 FALLBACK IF TOKEN / CREDIT ERROR
     if response.status_code != 200:
         return fallback_explanation(mode)
 
     return response.json()["choices"][0]["message"]["content"]
 
-def fallback_explanation(mode: str) -> str:
-    if mode == "Patient (Simple)":
-        return (
-            "This is a heart health laboratory report. It includes tests such as "
-            "Apolipoprotein B and hs-CRP, which are used to assess cardiovascular risk. "
-            "The hs-CRP value suggests an average risk level. Regular follow-up and "
-            "healthy lifestyle habits are recommended."
-        )
-    else:
-        return (
-            "The document represents an advanced cardiovascular screening report. "
-            "Reported hs-CRP places the patient in an average cardiovascular risk "
-            "category. ApoB is within reference range, indicating a favorable lipid profile."
-        )
-
-
-# ---------------- MAIN LOGIC ----------------
+# ---------------- MAIN ----------------
 if uploaded_file:
     try:
         image = Image.open(uploaded_file).convert("RGB")
@@ -115,8 +161,12 @@ if uploaded_file:
             with st.spinner("Analyzing medical report..."):
                 explanation = explain_with_openrouter(image, mode)
 
+            risk = detect_risk_level(explanation)
+            risk_badge(risk)
+
             st.subheader("📝 Explanation")
-            st.write(explanation)
+            explanation = highlight_abnormal(explanation)
+            st.markdown(explanation)
 
             st.info(
                 "⚠️ This explanation is for educational purposes only. "
