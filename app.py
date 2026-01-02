@@ -45,13 +45,16 @@ def explain_with_openrouter(image: Image.Image, mode: str) -> str:
     image_base64 = base64.b64encode(buffered.getvalue()).decode()
 
     prompt = (
-        "Explain this medical report in simple language for a patient."
+        "Explain this medical report in simple language for a patient. "
+        "Mention key test results and overall health risk."
         if mode == "Patient (Simple)"
-        else "Explain this medical report in technical language for a doctor."
+        else
+        "Explain this medical report in technical language for a doctor. "
+        "Include clinical interpretation and risk assessment."
     )
 
     payload = {
-        "model": "google/gemini-1.5-flash",
+        "model": "anthropic/claude-3.5-sonnet",
         "messages": [
             {
                 "role": "user",
@@ -69,7 +72,7 @@ def explain_with_openrouter(image: Image.Image, mode: str) -> str:
                 ]
             }
         ],
-        "max_tokens": 600
+        "max_tokens": 700
     }
 
     headers = {
@@ -81,7 +84,7 @@ def explain_with_openrouter(image: Image.Image, mode: str) -> str:
         "https://openrouter.ai/api/v1/chat/completions",
         headers=headers,
         json=payload,
-        timeout=60
+        timeout=90
     )
 
     if response.status_code != 200:
