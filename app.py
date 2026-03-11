@@ -3,7 +3,7 @@ from PIL import Image
 import base64
 import io
 import re
-import google.generativeai as genai
+import requests
 
 st.set_page_config(
     page_title="AI Medical Report Explainer",
@@ -11,13 +11,11 @@ st.set_page_config(
     layout="centered"
 )
 
-GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
+OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY")
 
-if not GEMINI_API_KEY:
-    st.error("Gemini API key not found. Please add GEMINI_API_KEY to your Streamlit secrets.")
+if not OPENROUTER_API_KEY:
+    st.error("OpenRouter API key not found. Please add OPENROUTER_API_KEY to your Streamlit secrets.")
     st.stop()
-
-genai.configure(api_key=GEMINI_API_KEY)
 
 st.title("AI Medical Report Explainer")
 st.write("Upload a medical report image and get an AI-generated explanation.")
@@ -89,17 +87,41 @@ def build_prompt(language, mode):
         else:
             return "A medical report nu technical vishleshan karo. 1. Report prakar 2. Test vishleshan 3. Asamanya parinamo 4. Arogya jokhim. Ochama ocha 200 shabd lakho."
 
-def explain_with_gemini(image, language, mode):
+def explain_with_openrouter(image, language, mode):
     compressed = compress_image(image)
+    image_base64 = base64.b64encode(compressed).decode()
     prompt = build_prompt(language, mode)
     try:
-        model = genai.GenerativeModel("gemini-2.0-flash")
-        image_part = {
-            "mime_type": "image/jpeg",
-            "data": compressed
-        }
-        response = model.generate_content([prompt, image_part])
-        return response.text
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers={
+                "Authorization": "Bearer " + OPENROUTER_API_KEY,
+                "Content-Type": "application/json"
+            },
+            json={
+                "model": "google/gemini-2.0-flash-exp:free",
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": "data:image/jpeg;base64," + image_base64
+                                }
+                            }
+                        ]
+                    }
+                ],
+                "max_tokens": 1200
+            },
+            timeout=60
+        )
+        data = response.json()
+        if response.status_code != 200:
+            return "AI request failed: " + str(data)
+        return data["choices"][0]["message"]["content"]
     except Exception as e:
         return "AI request failed: " + str(e)
 
@@ -108,7 +130,7 @@ if uploaded_file:
     st.image(image, caption="Uploaded Medical Report")
     if st.button("Explain Report"):
         with st.spinner("Analyzing medical report..."):
-            explanation = explain_with_gemini(image, language, mode)
+            explanation = explain_with_openrouter(image, language, mode)
         risk = detect_risk_level(explanation)
         risk_badge(risk)
         st.subheader("Medical Report Explanation")
