@@ -99,7 +99,7 @@ def explain_with_openrouter(image, language, mode):
                 "Content-Type": "application/json"
             },
             json={
-                "model": "meta-llama/llama-3.2-11b-vision-instruct:free",
+                "model": "openrouter/auto",
                 "messages": [
                     {
                         "role": "user",
@@ -114,7 +114,8 @@ def explain_with_openrouter(image, language, mode):
                         ]
                     }
                 ],
-                "max_tokens": 1200
+                "max_tokens": 1200,
+                "route": "fallback"
             },
             timeout=60
         )
