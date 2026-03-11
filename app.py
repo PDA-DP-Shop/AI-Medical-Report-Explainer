@@ -3,7 +3,7 @@ from PIL import Image
 import base64
 import io
 import re
-from openai import OpenAI
+import google.generativeai as genai
 
 st.set_page_config(
     page_title="AI Medical Report Explainer",
@@ -11,11 +11,13 @@ st.set_page_config(
     layout="centered"
 )
 
-OPENAI_API_KEY = st.secrets.get("OPENAI_API_KEY")
+GEMINI_API_KEY = st.secrets.get("GEMINI_API_KEY")
 
-if not OPENAI_API_KEY:
-    st.error("OpenAI API key not found. Please add OPENAI_API_KEY to your Streamlit secrets.")
+if not GEMINI_API_KEY:
+    st.error("Gemini API key not found. Please add GEMINI_API_KEY to your Streamlit secrets.")
     st.stop()
+
+genai.configure(api_key=GEMINI_API_KEY)
 
 st.title("AI Medical Report Explainer")
 st.write("Upload a medical report image and get an AI-generated explanation.")
@@ -87,31 +89,17 @@ def build_prompt(language, mode):
         else:
             return "A medical report nu technical vishleshan karo. 1. Report prakar 2. Test vishleshan 3. Asamanya parinamo 4. Arogya jokhim. Ochama ocha 200 shabd lakho."
 
-def explain_with_openai(image, language, mode):
+def explain_with_gemini(image, language, mode):
     compressed = compress_image(image)
-    image_base64 = base64.b64encode(compressed).decode()
     prompt = build_prompt(language, mode)
-    client = OpenAI(api_key=OPENAI_API_KEY)
     try:
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            max_tokens=1200,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {"type": "text", "text": prompt},
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": "data:image/jpeg;base64," + image_base64
-                            }
-                        }
-                    ]
-                }
-            ]
-        )
-        return response.choices[0].message.content
+        model = genai.GenerativeModel("gemini-1.5-flash")
+        image_part = {
+            "mime_type": "image/jpeg",
+            "data": compressed
+        }
+        response = model.generate_content([prompt, image_part])
+        return response.text
     except Exception as e:
         return "AI request failed: " + str(e)
 
@@ -120,7 +108,7 @@ if uploaded_file:
     st.image(image, caption="Uploaded Medical Report")
     if st.button("Explain Report"):
         with st.spinner("Analyzing medical report..."):
-            explanation = explain_with_openai(image, language, mode)
+            explanation = explain_with_gemini(image, language, mode)
         risk = detect_risk_level(explanation)
         risk_badge(risk)
         st.subheader("Medical Report Explanation")
