@@ -1,9 +1,9 @@
 import streamlit as st
 from PIL import Image
-import base64
 import io
 import re
-import requests
+import pytesseract
+from groq import Groq
 
 st.set_page_config(
     page_title="AI Medical Report Explainer",
@@ -11,10 +11,10 @@ st.set_page_config(
     layout="centered"
 )
 
-OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY")
+GROQ_API_KEY = st.secrets.get("GROQ_API_KEY")
 
-if not OPENROUTER_API_KEY:
-    st.error("OpenRouter API key not found. Please add OPENROUTER_API_KEY to your Streamlit secrets.")
+if not GROQ_API_KEY:
+    st.error("Groq API key not found. Please add GROQ_API_KEY to your Streamlit secrets.")
     st.stop()
 
 st.title("AI Medical Report Explainer")
@@ -35,16 +35,12 @@ uploaded_file = st.file_uploader(
     type=["png", "jpg", "jpeg"]
 )
 
-def compress_image(image, max_width=900, quality=60):
-    if image.width > max_width:
-        ratio = max_width / image.width
-        image = image.resize(
-            (max_width, int(image.height * ratio)),
-            Image.LANCZOS
-        )
-    buffer = io.BytesIO()
-    image.convert("RGB").save(buffer, format="JPEG", quality=quality, optimize=True)
-    return buffer.getvalue()
+def extract_text_from_image(image):
+    try:
+        text = pytesseract.image_to_string(image)
+        return text.strip()
+    except Exception as e:
+        return ""
 
 def detect_risk_level(text):
     text = text.lower()
@@ -70,59 +66,37 @@ def highlight_abnormal(text):
         text = re.sub(rf"\b{k}\b", f"**{k.upper()}**", text, flags=re.IGNORECASE)
     return text
 
-def build_prompt(language, mode):
+def build_prompt(language, mode, report_text):
+    base = "Here is the extracted text from a medical report:\n\n" + report_text + "\n\n"
     if language == "English":
         if mode == "Patient (Simple)":
-            return "You are a medical assistant helping patients understand lab reports. Analyze the medical report image carefully. Provide a detailed explanation using this structure: 1. Report Summary 2. Important Tests Detected 3. Abnormal Results 4. Health Meaning 5. Lifestyle Advice. Write clearly so a non-medical person can understand. Minimum 150 words."
+            return base + "You are a medical assistant helping patients understand lab reports. Analyze the medical report carefully. Provide a detailed explanation using this structure: 1. Report Summary 2. Important Tests Detected 3. Abnormal Results 4. Health Meaning 5. Lifestyle Advice. Write clearly so a non-medical person can understand. Minimum 150 words."
         else:
-            return "You are a clinical medical expert. Provide a technical interpretation of this medical report. Structure response as: 1. Report Type 2. Test Interpretation 3. Abnormal Findings 4. Clinical Significance 5. Risk Assessment. Minimum 200 words."
+            return base + "You are a clinical medical expert. Provide a technical interpretation of this medical report. Structure response as: 1. Report Type 2. Test Interpretation 3. Abnormal Findings 4. Clinical Significance 5. Risk Assessment. Minimum 200 words."
     if language == "Hindi":
         if mode == "Patient (Simple)":
-            return "Is medical report ko saral Hindi mein samjhaiye. In binduon ko shamil karen: 1. Report ka prakar 2. Mukhy test 3. Asamanya parinam 4. Swasthya par prabhav 5. Jeevanshaili salah. Kam se kam 150 shabd likhen."
+            return base + "Is medical report ko saral Hindi mein samjhaiye. 1. Report ka prakar 2. Mukhy test 3. Asamanya parinam 4. Swasthya par prabhav 5. Jeevanshaili salah. Kam se kam 150 shabd."
         else:
-            return "Is medical report ka chikitsakiy vishleshan Hindi mein karen. 1. Report ka prakar 2. Test vishleshan 3. Asamanya parinam 4. Swasthya jokhim. Kam se kam 200 shabd likhen."
+            return base + "Is medical report ka chikitsakiy vishleshan Hindi mein karen. 1. Report prakar 2. Test vishleshan 3. Asamanya parinam 4. Swasthya jokhim. Kam se kam 200 shabd."
     if language == "Gujarati":
         if mode == "Patient (Simple)":
-            return "A medical report ne saral Gujarati ma samjavo. 1. Report no prakar 2. Mukhy test 3. Asamanya parinam 4. Arogya par asar 5. Jeevanshaili salah. Ochama ocha 150 shabd lakho."
+            return base + "A medical report ne saral Gujarati ma samjavo. 1. Report no prakar 2. Mukhy test 3. Asamanya parinam 4. Arogya par asar 5. Jeevanshaili salah. Ochama ocha 150 shabd."
         else:
-            return "A medical report nu technical vishleshan karo. 1. Report prakar 2. Test vishleshan 3. Asamanya parinamo 4. Arogya jokhim. Ochama ocha 200 shabd lakho."
+            return base + "A medical report nu technical vishleshan karo. 1. Report prakar 2. Test vishleshan 3. Asamanya parinamo 4. Arogya jokhim. Ochama ocha 200 shabd."
 
-def explain_with_openrouter(image, language, mode):
-    compressed = compress_image(image)
-    image_base64 = base64.b64encode(compressed).decode()
-    prompt = build_prompt(language, mode)
+def explain_with_groq(report_text, language, mode):
+    prompt = build_prompt(language, mode, report_text)
+    client = Groq(api_key=GROQ_API_KEY)
     try:
-        response = requests.post(
-            "https://openrouter.ai/api/v1/chat/completions",
-            headers={
-                "Authorization": "Bearer " + OPENROUTER_API_KEY,
-                "Content-Type": "application/json"
-            },
-            json={
-                "model": "openrouter/auto",
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "text", "text": prompt},
-                            {
-                                "type": "image_url",
-                                "image_url": {
-                                    "url": "data:image/jpeg;base64," + image_base64
-                                }
-                            }
-                        ]
-                    }
-                ],
-                "max_tokens": 1200,
-                "route": "fallback"
-            },
-            timeout=60
+        response = client.chat.completions.create(
+            model="llama3-70b-8192",
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            max_tokens=1200,
+            temperature=0.3
         )
-        data = response.json()
-        if response.status_code != 200:
-            return "AI request failed: " + str(data)
-        return data["choices"][0]["message"]["content"]
+        return response.choices[0].message.content
     except Exception as e:
         return "AI request failed: " + str(e)
 
@@ -130,17 +104,21 @@ if uploaded_file:
     image = Image.open(uploaded_file).convert("RGB")
     st.image(image, caption="Uploaded Medical Report")
     if st.button("Explain Report"):
-        with st.spinner("Analyzing medical report..."):
-            explanation = explain_with_openrouter(image, language, mode)
-        risk = detect_risk_level(explanation)
-        risk_badge(risk)
-        st.subheader("Medical Report Explanation")
-        st.markdown(highlight_abnormal(explanation))
-        st.subheader("Health Summary")
-        if risk == "High":
-            st.error("High health risk detected. Please consult a doctor.")
-        elif risk == "Average":
-            st.warning("Moderate risk detected. Follow lifestyle precautions.")
-        else:
-            st.success("Low health risk detected.")
-        st.info("This AI explanation is for educational purposes only. Always consult a medical professional.")
+        with st.spinner("Reading and analyzing medical report..."):
+            report_text = extract_text_from_image(image)
+            if not report_text or len(report_text) < 20:
+                st.error("Could not read text from this image. Please upload a clearer image.")
+            else:
+                explanation = explain_with_groq(report_text, language, mode)
+                risk = detect_risk_level(explanation)
+                risk_badge(risk)
+                st.subheader("Medical Report Explanation")
+                st.markdown(highlight_abnormal(explanation))
+                st.subheader("Health Summary")
+                if risk == "High":
+                    st.error("High health risk detected. Please consult a doctor.")
+                elif risk == "Average":
+                    st.warning("Moderate risk detected. Follow lifestyle precautions.")
+                else:
+                    st.success("Low health risk detected.")
+                st.info("This AI explanation is for educational purposes only. Always consult a medical professional.")
