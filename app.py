@@ -15,7 +15,7 @@ st.set_page_config(
 OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY")
 
 if not OPENROUTER_API_KEY:
-    st.error("OpenRouter API key not found in Streamlit secrets.")
+    st.error("OpenRouter API key not found.")
     st.stop()
 
 # ---------------- UI ----------------
@@ -33,12 +33,12 @@ mode = st.radio(
 )
 
 uploaded_file = st.file_uploader(
-    "Upload Medical Report Image (PNG / JPG)",
+    "Upload Medical Report Image",
     type=["png", "jpg", "jpeg"]
 )
 
 # ---------------- IMAGE COMPRESSION ----------------
-def compress_image(image: Image.Image, max_width=900, quality=60) -> bytes:
+def compress_image(image: Image.Image, max_width=900, quality=60):
 
     if image.width > max_width:
         ratio = max_width / image.width
@@ -58,23 +58,23 @@ def compress_image(image: Image.Image, max_width=900, quality=60) -> bytes:
 
     return buffer.getvalue()
 
-# ---------------- RISK LOGIC ----------------
-def detect_risk_level(text: str) -> str:
+# ---------------- RISK DETECTION ----------------
+def detect_risk_level(text):
 
     text = text.lower()
 
-    if any(word in text for word in ["high risk", "severe", "critical"]):
+    if any(w in text for w in ["high risk","severe","critical"]):
         return "High"
 
-    if any(word in text for word in ["moderate", "average risk", "borderline"]):
+    if any(w in text for w in ["moderate","average risk","borderline"]):
         return "Average"
 
-    if any(word in text for word in ["normal", "low risk"]):
+    if any(w in text for w in ["normal","low risk"]):
         return "Low"
 
     return "Average"
 
-def risk_badge(risk: str):
+def risk_badge(risk):
 
     if risk == "Low":
         st.success("🟢 Low Health Risk")
@@ -85,10 +85,10 @@ def risk_badge(risk: str):
     else:
         st.error("🔴 High Health Risk")
 
-# ---------------- ABNORMAL HIGHLIGHT ----------------
-def highlight_abnormal(text: str):
+# ---------------- HIGHLIGHT ABNORMAL ----------------
+def highlight_abnormal(text):
 
-    keywords = ["high", "low", "elevated", "abnormal", "above", "below"]
+    keywords = ["high","low","elevated","abnormal","above","below"]
 
     for k in keywords:
 
@@ -101,53 +101,76 @@ def highlight_abnormal(text: str):
 
     return text
 
-# ---------------- FALLBACK ----------------
-def fallback_explanation(language, mode):
-
-    if language == "Hindi":
-        return (
-            "यह एक स्वास्थ्य रिपोर्ट है। कुछ परीक्षण परिणाम सामान्य सीमा से "
-            "अधिक या कम हो सकते हैं। सटीक चिकित्सा सलाह के लिए डॉक्टर से "
-            "परामर्श करें।"
-        )
-
-    if language == "Gujarati":
-        return (
-            "આ આરોગ્ય રિપોર્ટ છે. કેટલાક ટેસ્ટ પરિણામો સામાન્ય મર્યાદાથી "
-            "ઉપર અથવા નીચે હોઈ શકે છે. ચોક્કસ સલાહ માટે ડોક્ટરને મળો."
-        )
-
-    return (
-        "This appears to be a medical laboratory report. Some results may be "
-        "outside the normal range. Please consult a healthcare professional "
-        "for accurate diagnosis."
-    )
-
 # ---------------- PROMPT BUILDER ----------------
 def build_prompt(language, mode):
+
+    if language == "English":
+
+        if mode == "Patient (Simple)":
+            return """
+You are a medical assistant helping patients understand lab reports.
+
+Analyze the medical report image carefully.
+
+Provide a detailed explanation using this structure:
+
+1. Report Summary
+2. Important Tests Detected
+3. Abnormal Results
+4. Health Meaning
+5. Lifestyle Advice
+
+Write clearly so a non-medical person can understand.
+
+Minimum 150 words.
+"""
+
+        else:
+            return """
+You are a clinical medical expert.
+
+Provide a technical interpretation of this medical report.
+
+Structure response as:
+
+1. Report Type
+2. Test Interpretation
+3. Abnormal Findings
+4. Clinical Significance
+5. Risk Assessment
+
+Minimum 200 words.
+"""
 
     if language == "Hindi":
 
         if mode == "Patient (Simple)":
             return """
-इस मेडिकल रिपोर्ट को सरल भाषा में समझाइए।
+इस मेडिकल रिपोर्ट को सरल हिंदी में समझाइए।
 
 इन बिंदुओं को शामिल करें:
 
-1. रिपोर्ट में कौन-कौन से टेस्ट हैं
-2. कौन से परिणाम सामान्य या असामान्य हैं
-3. इसका स्वास्थ्य पर क्या प्रभाव हो सकता है
-4. सरल जीवनशैली सलाह दें
+1. रिपोर्ट का प्रकार
+2. मुख्य टेस्ट
+3. असामान्य परिणाम
+4. स्वास्थ्य पर प्रभाव
+5. जीवनशैली सलाह
+
+कम से कम 150 शब्द लिखें।
 """
 
         else:
             return """
-इस मेडिकल रिपोर्ट का तकनीकी विश्लेषण करें।
+इस मेडिकल रिपोर्ट का चिकित्सकीय विश्लेषण हिंदी में करें।
 
-प्रत्येक टेस्ट के लिए:
-- टेस्ट का उद्देश्य
-- परिणाम का विश्लेषण
-- संभावित जोखिम
+इन बिंदुओं को शामिल करें:
+
+1. रिपोर्ट का प्रकार
+2. टेस्ट विश्लेषण
+3. असामान्य परिणाम
+4. स्वास्थ्य जोखिम
+
+कम से कम 200 शब्द लिखें।
 """
 
     if language == "Gujarati":
@@ -157,46 +180,32 @@ def build_prompt(language, mode):
 આ મેડિકલ રિપોર્ટને સરળ ગુજરાતી ભાષામાં સમજાવો.
 
 સમાવો:
-1. મુખ્ય ટેસ્ટ
-2. કયા પરિણામો સામાન્ય અથવા અસામાન્ય છે
-3. આરોગ્ય પર તેની અસર
-4. સરળ જીવનશૈલી સલાહ
+
+1. રિપોર્ટનો પ્રકાર
+2. મુખ્ય ટેસ્ટ
+3. અસામાન્ય પરિણામ
+4. આરોગ્ય પર અસર
+5. જીવનશૈલી સલાહ
+
+ઓછામાં ઓછા 150 શબ્દ લખો.
 """
 
         else:
             return """
-આ મેડિકલ રિપોર્ટનું ટેક્નિકલ વિશ્લેષણ આપો.
-દરેક ટેસ્ટનું પરિણામ અને જોખમ સમજાવો.
-"""
+આ મેડિકલ રિપોર્ટનું ટેક્નિકલ વિશ્લેષણ કરો.
 
-    # English
+સમાવો:
 
-    if mode == "Patient (Simple)":
-        return """
-Analyze this medical report and explain it in simple language.
+1. રિપોર્ટ પ્રકાર
+2. ટેસ્ટ વિશ્લેષણ
+3. અસામાન્ય પરિણામો
+4. આરોગ્ય જોખમ
 
-Include:
-
-1. Main tests found in the report
-2. Abnormal values
-3. Health impact
-4. Lifestyle advice
-"""
-
-    else:
-        return """
-Provide a clinical interpretation of this medical report.
-
-For each test include:
-
-- Test meaning
-- Result interpretation
-- Abnormal findings
-- Risk implications
+ઓછામાં ઓછા 200 શબ્દ લખો.
 """
 
 # ---------------- OPENROUTER ----------------
-def explain_with_openrouter(image: Image.Image, language, mode: str) -> str:
+def explain_with_openrouter(image, language, mode):
 
     compressed = compress_image(image)
 
@@ -205,7 +214,9 @@ def explain_with_openrouter(image: Image.Image, language, mode: str) -> str:
     prompt = build_prompt(language, mode)
 
     payload = {
+
         "model": "anthropic/claude-3-haiku",
+
         "messages": [
             {
                 "role": "user",
@@ -220,8 +231,9 @@ def explain_with_openrouter(image: Image.Image, language, mode: str) -> str:
                 ]
             }
         ],
-        "max_tokens": 700,
-        "temperature": 0.2
+
+        "max_tokens": 1200,
+        "temperature": 0.1
     }
 
     headers = {
@@ -239,19 +251,19 @@ def explain_with_openrouter(image: Image.Image, language, mode: str) -> str:
         )
 
         if response.status_code != 200:
-            return fallback_explanation(language, mode)
+            return "AI could not analyze this report."
 
         return response.json()["choices"][0]["message"]["content"]
 
-    except Exception:
-        return fallback_explanation(language, mode)
+    except:
+        return "AI request failed."
 
 # ---------------- MAIN ----------------
 if uploaded_file:
 
     image = Image.open(uploaded_file).convert("RGB")
 
-    st.image(image, caption="Uploaded Medical Report", use_column_width=True)
+    st.image(image, caption="Uploaded Medical Report")
 
     if st.button("Explain Report"):
 
@@ -273,12 +285,11 @@ if uploaded_file:
             st.error("High health risk detected. Please consult a doctor.")
 
         elif risk == "Average":
-            st.warning("Moderate risk detected. Monitor lifestyle and follow-up tests.")
+            st.warning("Moderate risk detected. Follow lifestyle precautions.")
 
         else:
             st.success("Low health risk detected.")
 
         st.info(
-            "⚠️ This AI explanation is for educational purposes only. "
-            "Always consult a certified healthcare professional."
+            "⚠️ This AI explanation is for educational purposes only. Always consult a medical professional."
         )
