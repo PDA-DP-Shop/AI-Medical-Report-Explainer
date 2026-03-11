@@ -99,7 +99,7 @@ def explain_with_openrouter(image, language, mode):
                 "Content-Type": "application/json"
             },
             json={
-                "model": "google/gemini-2.0-flash-exp:free",
+                "model": "meta-llama/llama-3.2-11b-vision-instruct:free",
                 "messages": [
                     {
                         "role": "user",
