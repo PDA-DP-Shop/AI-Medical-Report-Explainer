@@ -13,6 +13,7 @@ st.set_page_config(
 )
 
 OPENROUTER_API_KEY = st.secrets.get("OPENROUTER_API_KEY")
+
 if not OPENROUTER_API_KEY:
     st.error("OpenRouter API key not found in Streamlit secrets.")
     st.stop()
@@ -38,6 +39,7 @@ uploaded_file = st.file_uploader(
 
 # ---------------- IMAGE COMPRESSION ----------------
 def compress_image(image: Image.Image, max_width=900, quality=60) -> bytes:
+
     if image.width > max_width:
         ratio = max_width / image.width
         image = image.resize(
@@ -46,101 +48,160 @@ def compress_image(image: Image.Image, max_width=900, quality=60) -> bytes:
         )
 
     buffer = io.BytesIO()
+
     image.convert("RGB").save(
         buffer,
         format="JPEG",
         quality=quality,
         optimize=True
     )
+
     return buffer.getvalue()
 
 # ---------------- RISK LOGIC ----------------
 def detect_risk_level(text: str) -> str:
+
     text = text.lower()
-    if "high risk" in text or "high cardiovascular" in text:
+
+    if any(word in text for word in ["high risk", "severe", "critical"]):
         return "High"
-    if "average risk" in text or "moderate risk" in text:
+
+    if any(word in text for word in ["moderate", "average risk", "borderline"]):
         return "Average"
-    if "low risk" in text:
+
+    if any(word in text for word in ["normal", "low risk"]):
         return "Low"
+
     return "Average"
 
 def risk_badge(risk: str):
+
     if risk == "Low":
-        st.success("🟢 Low Risk")
+        st.success("🟢 Low Health Risk")
+
     elif risk == "Average":
-        st.warning("🟡 Average Risk")
+        st.warning("🟡 Moderate Health Risk")
+
     else:
-        st.error("🔴 High Risk")
+        st.error("🔴 High Health Risk")
 
 # ---------------- ABNORMAL HIGHLIGHT ----------------
 def highlight_abnormal(text: str):
+
     keywords = ["high", "low", "elevated", "abnormal", "above", "below"]
+
     for k in keywords:
+
         text = re.sub(
             rf"\b{k}\b",
             f"**⚠️ {k.upper()}**",
             text,
             flags=re.IGNORECASE
         )
+
     return text
 
 # ---------------- FALLBACK ----------------
 def fallback_explanation(language, mode):
+
     if language == "Hindi":
         return (
-            "यह एक हृदय स्वास्थ्य जांच रिपोर्ट है। इसमें Apo B और hs-CRP जैसे "
-            "परीक्षण शामिल हैं, जो हृदय रोग के जोखिम का आकलन करते हैं। "
-            "रिपोर्ट औसत हृदय जोखिम दर्शाती है।"
+            "यह एक स्वास्थ्य रिपोर्ट है। कुछ परीक्षण परिणाम सामान्य सीमा से "
+            "अधिक या कम हो सकते हैं। सटीक चिकित्सा सलाह के लिए डॉक्टर से "
+            "परामर्श करें।"
         )
+
     if language == "Gujarati":
         return (
-            "આ હૃદય સ્વાસ્થ્ય તપાસ રિપોર્ટ છે. તેમાં Apo B અને hs-CRP જેવા ટેસ્ટ્સ "
-            "સમાવેલ છે, જે હૃદયના જોખમનું મૂલ્યાંકન કરે છે. "
-            "રિપોર્ટ સરેરાશ હૃદય જોખમ દર્શાવે છે."
+            "આ આરોગ્ય રિપોર્ટ છે. કેટલાક ટેસ્ટ પરિણામો સામાન્ય મર્યાદાથી "
+            "ઉપર અથવા નીચે હોઈ શકે છે. ચોક્કસ સલાહ માટે ડોક્ટરને મળો."
         )
+
     return (
-        "This is a heart health laboratory report. It includes tests like "
-        "Apolipoprotein B and hs-CRP to assess cardiovascular risk. "
-        "The findings suggest an average risk level."
+        "This appears to be a medical laboratory report. Some results may be "
+        "outside the normal range. Please consult a healthcare professional "
+        "for accurate diagnosis."
     )
 
 # ---------------- PROMPT BUILDER ----------------
 def build_prompt(language, mode):
+
     if language == "Hindi":
-        return (
-            "इस मेडिकल रिपोर्ट को सरल भाषा में समझाइए। "
-            "मुख्य टेस्ट परिणाम और जोखिम स्तर बताइए।"
-            if mode == "Patient (Simple)"
-            else
-            "इस मेडिकल रिपोर्ट का तकनीकी विश्लेषण हिंदी में दीजिए। "
-            "असामान्य परिणाम और जोखिम स्तर बताइए।"
-        )
+
+        if mode == "Patient (Simple)":
+            return """
+इस मेडिकल रिपोर्ट को सरल भाषा में समझाइए।
+
+इन बिंदुओं को शामिल करें:
+
+1. रिपोर्ट में कौन-कौन से टेस्ट हैं
+2. कौन से परिणाम सामान्य या असामान्य हैं
+3. इसका स्वास्थ्य पर क्या प्रभाव हो सकता है
+4. सरल जीवनशैली सलाह दें
+"""
+
+        else:
+            return """
+इस मेडिकल रिपोर्ट का तकनीकी विश्लेषण करें।
+
+प्रत्येक टेस्ट के लिए:
+- टेस्ट का उद्देश्य
+- परिणाम का विश्लेषण
+- संभावित जोखिम
+"""
 
     if language == "Gujarati":
-        return (
-            "આ મેડિકલ રિપોર્ટને સરળ ગુજરાતી ભાષામાં સમજાવો. "
-            "મુખ્ય ટેસ્ટ અને જોખમ સ્તર જણાવો."
-            if mode == "Patient (Simple)"
-            else
-            "આ મેડિકલ રિપોર્ટનું ટેક્નિકલ વિશ્લેષણ ગુજરાતી ભાષામાં આપો. "
-            "અસામાન્ય પરિણામો અને જોખમ સ્તર દર્શાવો."
-        )
+
+        if mode == "Patient (Simple)":
+            return """
+આ મેડિકલ રિપોર્ટને સરળ ગુજરાતી ભાષામાં સમજાવો.
+
+સમાવો:
+1. મુખ્ય ટેસ્ટ
+2. કયા પરિણામો સામાન્ય અથવા અસામાન્ય છે
+3. આરોગ્ય પર તેની અસર
+4. સરળ જીવનશૈલી સલાહ
+"""
+
+        else:
+            return """
+આ મેડિકલ રિપોર્ટનું ટેક્નિકલ વિશ્લેષણ આપો.
+દરેક ટેસ્ટનું પરિણામ અને જોખમ સમજાવો.
+"""
 
     # English
-    return (
-        "Explain this medical report in simple language. "
-        "Mention key tests, abnormal values, and overall risk."
-        if mode == "Patient (Simple)"
-        else
-        "Provide a concise clinical interpretation of this medical report, "
-        "highlighting abnormal findings and risk category."
-    )
+
+    if mode == "Patient (Simple)":
+        return """
+Analyze this medical report and explain it in simple language.
+
+Include:
+
+1. Main tests found in the report
+2. Abnormal values
+3. Health impact
+4. Lifestyle advice
+"""
+
+    else:
+        return """
+Provide a clinical interpretation of this medical report.
+
+For each test include:
+
+- Test meaning
+- Result interpretation
+- Abnormal findings
+- Risk implications
+"""
 
 # ---------------- OPENROUTER ----------------
 def explain_with_openrouter(image: Image.Image, language, mode: str) -> str:
+
     compressed = compress_image(image)
+
     image_base64 = base64.b64encode(compressed).decode()
+
     prompt = build_prompt(language, mode)
 
     payload = {
@@ -159,7 +220,8 @@ def explain_with_openrouter(image: Image.Image, language, mode: str) -> str:
                 ]
             }
         ],
-        "max_tokens": 300
+        "max_tokens": 700,
+        "temperature": 0.2
     }
 
     headers = {
@@ -167,34 +229,56 @@ def explain_with_openrouter(image: Image.Image, language, mode: str) -> str:
         "Content-Type": "application/json"
     }
 
-    response = requests.post(
-        "https://openrouter.ai/api/v1/chat/completions",
-        headers=headers,
-        json=payload,
-        timeout=60
-    )
+    try:
 
-    if response.status_code != 200:
+        response = requests.post(
+            "https://openrouter.ai/api/v1/chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=60
+        )
+
+        if response.status_code != 200:
+            return fallback_explanation(language, mode)
+
+        return response.json()["choices"][0]["message"]["content"]
+
+    except Exception:
         return fallback_explanation(language, mode)
-
-    return response.json()["choices"][0]["message"]["content"]
 
 # ---------------- MAIN ----------------
 if uploaded_file:
+
     image = Image.open(uploaded_file).convert("RGB")
+
     st.image(image, caption="Uploaded Medical Report", use_column_width=True)
 
     if st.button("Explain Report"):
+
         with st.spinner("Analyzing medical report..."):
+
             explanation = explain_with_openrouter(image, language, mode)
 
         risk = detect_risk_level(explanation)
+
         risk_badge(risk)
 
-        st.subheader("📝 Explanation")
+        st.subheader("📝 Medical Report Explanation")
+
         st.markdown(highlight_abnormal(explanation))
 
+        st.subheader("📊 Health Summary")
+
+        if risk == "High":
+            st.error("High health risk detected. Please consult a doctor.")
+
+        elif risk == "Average":
+            st.warning("Moderate risk detected. Monitor lifestyle and follow-up tests.")
+
+        else:
+            st.success("Low health risk detected.")
+
         st.info(
-            "⚠️ This explanation is for educational purposes only. "
-            "Always consult a certified medical professional."
+            "⚠️ This AI explanation is for educational purposes only. "
+            "Always consult a certified healthcare professional."
         )
